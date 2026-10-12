@@ -1,0 +1,343 @@
+//@version=6
+strategy(
+     "Forex Strategy - 0.5R Test",
+     overlay=true,
+     initial_capital=50,
+     currency=currency.USD,
+     pyramiding=0,
+     margin_long=0.2,
+     margin_short=0.2,
+     process_orders_on_close=true,
+     max_lines_count=100,
+     max_boxes_count=100)
+// ─────────────────────────────────────────────
+// SETTINGS
+// ─────────────────────────────────────────────
+string timezone = "GMT+12"
+string nySession = "0100-0900"
+string asiaSession = "1200-2000"
+float riskPercent = 5.0
+float rewardRisk = 0.50
+float slBuffer = 0.30
+bool inNY = not na(time(timeframe.period, nySession, timezone))
+bool inAsia = not na(time(timeframe.period, asiaSession, timezone))
+bool newNYSession = inNY and not inNY[1]
+bool newAsiaSession = inAsia and not inAsia[1]
+// ─────────────────────────────────────────────
+// TRADE STATUS
+// ─────────────────────────────────────────────
+var bool tradeTaken = false
+// ─────────────────────────────────────────────
+// NY SESSION HIGH / LOW
+// ─────────────────────────────────────────────
+var float nyHigh = na
+var float nyLow = na
+if newNYSession
+    nyHigh := high
+    nyLow := low
+if inNY
+    nyHigh := math.max(nyHigh, high)
+    nyLow := math.min(nyLow, low)
+// ─────────────────────────────────────────────
+// NY HIGH / LOW LINES
+// ─────────────────────────────────────────────
+var line highLine = na
+var line lowLine = na
+if newAsiaSession
+    tradeTaken := false
+    if not na(highLine)
+        line.delete(highLine)
+    if not na(lowLine)
+        line.delete(lowLine)
+    highLine := line.new(
+         bar_index,
+         nyHigh,
+         bar_index + 96,
+         nyHigh,
+         color=color.purple,
+         width=2)
+    lowLine := line.new(
+         bar_index,
+         nyLow,
+         bar_index + 96,
+         nyLow,
+         color=color.yellow,
+         width=2)
+// ─────────────────────────────────────────────
+// LIQUIDITY SWEEPS
+// ─────────────────────────────────────────────
+var bool bullishSweepFound = false
+var float sweepLow = na
+var int sweepLowBar = na
+var float sweepLowRange = na
+var bool bearishSweepFound = false
+var float sweepHigh = na
+var int sweepHighBar = na
+var float sweepHighRange = na
+if newAsiaSession
+    bullishSweepFound := false
+    bearishSweepFound := false
+    sweepLow := na
+    sweepHigh := na
+    sweepLowBar := na
+    sweepHighBar := na
+    sweepLowRange := na
+    sweepHighRange := na
+// ─────────────────────────────────────────────
+// BULLISH SWEEP
+// ─────────────────────────────────────────────
+if inAsia and not bullishSweepFound and low < nyLow
+    bullishSweepFound := true
+    sweepLow := low
+    sweepLowBar := bar_index
+    sweepLowRange := high - low
+if inAsia and bullishSweepFound and low < sweepLow
+    sweepLow := low
+    sweepLowBar := bar_index
+    sweepLowRange := high - low
+// ─────────────────────────────────────────────
+// BEARISH SWEEP
+// ─────────────────────────────────────────────
+if inAsia and not bearishSweepFound and high > nyHigh
+    bearishSweepFound := true
+    sweepHigh := high
+    sweepHighBar := bar_index
+    sweepHighRange := high - low
+if inAsia and bearishSweepFound and high > sweepHigh
+    sweepHigh := high
+    sweepHighBar := bar_index
+    sweepHighRange := high - low
+// ─────────────────────────────────────────────
+// DISPLAY SWEEPS
+// ─────────────────────────────────────────────
+plotshape(
+     inAsia and bar_index == sweepLowBar,
+     title="Bullish Sweep",
+     style=shape.xcross,
+     location=location.belowbar,
+     color=color.green,
+     size=size.small)
+plotshape(
+     inAsia and bar_index == sweepHighBar,
+     title="Bearish Sweep",
+     style=shape.xcross,
+     location=location.abovebar,
+     color=color.red,
+     size=size.small)
+// ─────────────────────────────────────────────
+// CHANGE OF STRUCTURE
+// ─────────────────────────────────────────────
+bool swingHigh = high[1] > high[2] and high[1] > high
+bool swingLow = low[1] < low[2] and low[1] < low
+var float previousSwingHigh = na
+var float previousSwingLow = na
+var float lowerHigh = na
+var float higherLow = na
+var bool bullishStructureBroken = false
+var bool bearishStructureBroken = false
+if newAsiaSession
+    previousSwingHigh := na
+    previousSwingLow := na
+    lowerHigh := na
+    higherLow := na
+    bullishStructureBroken := false
+    bearishStructureBroken := false
+if inAsia and swingHigh
+    if not na(previousSwingHigh) and high[1] < previousSwingHigh
+        lowerHigh := high[1]
+    previousSwingHigh := high[1]
+if inAsia and swingLow
+    if not na(previousSwingLow) and low[1] > previousSwingLow
+        higherLow := low[1]
+    previousSwingLow := low[1]
+// ─────────────────────────────────────────────
+// CHoS
+// ─────────────────────────────────────────────
+if inAsia and bullishSweepFound and not bullishStructureBroken
+    if not na(lowerHigh) and high > lowerHigh
+        bullishStructureBroken := true
+if inAsia and bearishSweepFound and not bearishStructureBroken
+    if not na(higherLow) and low < higherLow
+        bearishStructureBroken := true
+// ─────────────────────────────────────────────
+// DISPLAY CHoS
+// ─────────────────────────────────────────────
+plotshape(
+     inAsia and bullishStructureBroken and not bullishStructureBroken[1],
+     title="Bullish CHoS",
+     style=shape.triangleup,
+     location=location.belowbar,
+     color=color.blue,
+     size=size.small)
+plotshape(
+     inAsia and bearishStructureBroken and not bearishStructureBroken[1],
+     title="Bearish CHoS",
+     style=shape.triangledown,
+     location=location.abovebar,
+     color=color.orange,
+     size=size.small)
+// ─────────────────────────────────────────────
+// FAIR VALUE GAPS
+// ─────────────────────────────────────────────
+bool bullishFVG = low > high[2]
+bool bearishFVG = high < low[2]
+// Bullish FVG
+var box bullishBox = na
+var float bullishTop = na
+var float bullishBottom = na
+var bool bullishActive = false
+var bool bullishTouched = false
+// Bearish FVG
+var box bearishBox = na
+var float bearishTop = na
+var float bearishBottom = na
+var bool bearishActive = false
+var bool bearishTouched = false
+bool bullishEntry = false
+bool bearishEntry = false
+if newAsiaSession
+    bullishActive := false
+    bullishTouched := false
+    bearishActive := false
+    bearishTouched := false
+// ─────────────────────────────────────────────
+// CREATE BULLISH FVG
+// ─────────────────────────────────────────────
+if inAsia and bullishStructureBroken and not tradeTaken and bullishFVG
+    if bullishActive and not na(bullishBox)
+        box.delete(bullishBox)
+    bullishTop := low
+    bullishBottom := high[2]
+    bullishActive := true
+    bullishTouched := false
+    bullishBox := box.new(
+         left=bar_index - 2,
+         top=bullishTop,
+         right=bar_index,
+         bottom=bullishBottom,
+         border_color=color.green,
+         bgcolor=color.new(color.green, 85))
+// ─────────────────────────────────────────────
+// CREATE BEARISH FVG
+// ─────────────────────────────────────────────
+if inAsia and bearishStructureBroken and not tradeTaken and bearishFVG
+    if bearishActive and not na(bearishBox)
+        box.delete(bearishBox)
+    bearishTop := low[2]
+    bearishBottom := high
+    bearishActive := true
+    bearishTouched := false
+    bearishBox := box.new(
+         left=bar_index - 2,
+         top=bearishTop,
+         right=bar_index,
+         bottom=bearishBottom,
+         border_color=color.red,
+         bgcolor=color.new(color.red, 85))
+// ─────────────────────────────────────────────
+// BULLISH FVG RETURN
+// ─────────────────────────────────────────────
+if bullishActive
+    box.set_right(bullishBox, bar_index)
+    bool entered = low <= bullishTop and high >= bullishBottom
+    bool invalidated = close < bullishBottom
+    if entered
+        bullishTouched := true
+    if invalidated
+        bullishActive := false
+        bullishTouched := false
+        box.set_right(bullishBox, bar_index)
+    else if bullishTouched and close > bullishTop and close > open
+        bullishEntry := true
+        bullishActive := false
+        box.set_right(bullishBox, bar_index)
+// ─────────────────────────────────────────────
+// BEARISH FVG RETURN
+// ─────────────────────────────────────────────
+if bearishActive
+    box.set_right(bearishBox, bar_index)
+    bool entered = high >= bearishBottom and low <= bearishTop
+    bool invalidated = close > bearishTop
+    if entered
+        bearishTouched := true
+    if invalidated
+        bearishActive := false
+        bearishTouched := false
+        box.set_right(bearishBox, bar_index)
+    else if bearishTouched and close < bearishBottom and close < open
+        bearishEntry := true
+        bearishActive := false
+        box.set_right(bearishBox, bar_index)
+// ─────────────────────────────────────────────
+// TRADE LEVELS
+// ─────────────────────────────────────────────
+var float entryPrice = na
+var float stopLoss = na
+var float takeProfit = na
+var line stopLine = na
+var line tpLine = na
+// ─────────────────────────────────────────────
+// LONG TRADE
+// ─────────────────────────────────────────────
+if bullishEntry and not tradeTaken
+    float candidateEntry = close
+    float candidateStop = sweepLow - (sweepLowRange * slBuffer)
+    float riskPerUnit = candidateEntry - candidateStop
+    float riskMoney = strategy.equity * (riskPercent / 100)
+
+    // Only submit orders when the stop is below entry and the size is valid.
+    if not na(riskPerUnit) and riskPerUnit > 0 and riskMoney > 0
+        float positionSize = riskMoney / riskPerUnit
+        if not na(positionSize) and positionSize > 0
+            tradeTaken := true
+            entryPrice := candidateEntry
+            stopLoss := candidateStop
+            takeProfit := entryPrice + (riskPerUnit * rewardRisk)
+
+            strategy.entry("Long", strategy.long, qty=positionSize)
+            strategy.exit("Long Exit", from_entry="Long", stop=stopLoss, limit=takeProfit)
+
+            stopLine := line.new(bar_index, stopLoss, bar_index + 96, stopLoss, color=color.red, width=2)
+            tpLine := line.new(bar_index, takeProfit, bar_index + 96, takeProfit, color=color.green, width=2)
+
+// ─────────────────────────────────────────────
+// SHORT TRADE
+// ─────────────────────────────────────────────
+if bearishEntry and not tradeTaken
+    float candidateEntry = close
+    float candidateStop = sweepHigh + (sweepHighRange * slBuffer)
+    float riskPerUnit = candidateStop - candidateEntry
+    float riskMoney = strategy.equity * (riskPercent / 100)
+
+    // Only submit orders when the stop is above entry and the size is valid.
+    if not na(riskPerUnit) and riskPerUnit > 0 and riskMoney > 0
+        float positionSize = riskMoney / riskPerUnit
+        if not na(positionSize) and positionSize > 0
+            tradeTaken := true
+            entryPrice := candidateEntry
+            stopLoss := candidateStop
+            takeProfit := entryPrice - (riskPerUnit * rewardRisk)
+
+            strategy.entry("Short", strategy.short, qty=positionSize)
+            strategy.exit("Short Exit", from_entry="Short", stop=stopLoss, limit=takeProfit)
+
+            stopLine := line.new(bar_index, stopLoss, bar_index + 96, stopLoss, color=color.red, width=2)
+            tpLine := line.new(bar_index, takeProfit, bar_index + 96, takeProfit, color=color.green, width=2)
+
+// ─────────────────────────────────────────────
+// ENTRY MARKERS
+// ─────────────────────────────────────────────
+plotshape(
+     bullishEntry and tradeTaken,
+     title="Bullish Entry",
+     style=shape.triangleup,
+     location=location.belowbar,
+     color=color.blue,
+     size=size.small)
+plotshape(
+     bearishEntry and tradeTaken,
+     title="Bearish Entry",
+     style=shape.triangledown,
+     location=location.abovebar,
+     color=color.orange,
+     size=size.small)
